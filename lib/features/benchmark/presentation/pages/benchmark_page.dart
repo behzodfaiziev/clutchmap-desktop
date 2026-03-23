@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/di/injection.dart';
-import '../../../../core/network/api_client.dart';
+import '../../../../core/team/active_team_service.dart';
 import '../../infrastructure/datasources/benchmark_remote_data_source.dart';
 import '../bloc/benchmark_bloc.dart';
 import '../bloc/benchmark_event.dart';
@@ -13,19 +13,67 @@ import '../widgets/meta_trend_chart.dart';
 import '../widgets/interpretation_section.dart';
 import '../widgets/evolution_comparison_section.dart';
 
-class BenchmarkPage extends StatelessWidget {
+class BenchmarkPage extends StatefulWidget {
+  const BenchmarkPage({super.key});
+
+  @override
+  State<BenchmarkPage> createState() => _BenchmarkPageState();
+}
+
+class _BenchmarkPageState extends State<BenchmarkPage> {
+  Future<String?>? _teamIdFuture;
+
+  Future<String?> _teamIdAfterResolved() async {
+    final active = getIt<ActiveTeamService>();
+    await active.ensureResolved();
+    return active.activeTeamId;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _teamIdFuture ??= _teamIdAfterResolved();
+    return FutureBuilder<String?>(
+      future: _teamIdFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final teamId = snapshot.data;
+        if (teamId == null || teamId.isEmpty) {
+          return Scaffold(
+            appBar: AppBar(title: const Text("Team Benchmark")),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  snapshot.hasError
+                      ? 'Could not load team. Check backend connection.'
+                      : 'No team found. Create or join a team to view benchmark.',
+                  style: const TextStyle(color: Colors.white70),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          );
+        }
+        return _BenchmarkContent(teamId: teamId);
+      },
+    );
+  }
+}
+
+class _BenchmarkContent extends StatelessWidget {
   final String teamId;
 
-  const BenchmarkPage({
-    super.key,
-    required this.teamId,
-  });
+  const _BenchmarkContent({required this.teamId});
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (context) => BenchmarkBloc(
-        dataSource: BenchmarkRemoteDataSource(getIt<ApiClient>()),
+        dataSource: getIt<BenchmarkRemoteDataSource>(),
       )..add(BenchmarkLoaded(teamId)),
       child: Scaffold(
         appBar: AppBar(
@@ -38,21 +86,28 @@ class BenchmarkPage extends StatelessWidget {
             }
             if (state is BenchmarkError) {
               return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      state.message,
-                      style: const TextStyle(color: Colors.red),
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () {
-                        context.read<BenchmarkBloc>().add(BenchmarkLoaded(teamId));
-                      },
-                      child: const Text('Retry'),
-                    ),
-                  ],
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
+                      const SizedBox(height: 16),
+                      Text(
+                        state.message,
+                        style: const TextStyle(color: Colors.white70),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          context.read<BenchmarkBloc>().add(BenchmarkLoaded(teamId));
+                        },
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Retry'),
+                      ),
+                    ],
+                  ),
                 ),
               );
             }

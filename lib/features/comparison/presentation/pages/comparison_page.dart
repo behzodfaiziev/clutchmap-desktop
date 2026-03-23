@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/di/injection.dart';
-import '../../../../core/network/api_client.dart';
+import '../../../../core/team/active_team_service.dart';
 import '../../../matches/infrastructure/datasources/matches_remote_data_source.dart';
 import '../../../workspace/infrastructure/datasources/workspace_remote_data_source.dart';
 import '../../infrastructure/datasources/comparison_remote_data_source.dart';
@@ -14,18 +14,57 @@ import '../widgets/metric_delta_row.dart';
 import '../widgets/round_diff_card.dart';
 import '../widgets/insight_summary.dart';
 
-class ComparisonPage extends StatelessWidget {
+class ComparisonPage extends StatefulWidget {
   const ComparisonPage({super.key});
 
   @override
+  State<ComparisonPage> createState() => _ComparisonPageState();
+}
+
+class _ComparisonPageState extends State<ComparisonPage> {
+  Future<bool>? _hasTeamFuture;
+
+  Future<bool> _ensureTeamThenHasTeam() async {
+    final active = getIt<ActiveTeamService>();
+    await active.ensureResolved();
+    return active.activeTeamId != null && active.activeTeamId!.isNotEmpty;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => ComparisonBloc(
-        comparisonDataSource: ComparisonRemoteDataSource(getIt<ApiClient>()),
-        matchesDataSource: MatchesRemoteDataSource(getIt<ApiClient>()),
-        workspaceDataSource: WorkspaceRemoteDataSource(getIt<ApiClient>()),
-      )..add(const MatchesListLoaded()),
-      child: const _ComparisonPageContent(),
+    _hasTeamFuture ??= _ensureTeamThenHasTeam();
+    return FutureBuilder<bool>(
+      future: _hasTeamFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        if (snapshot.hasError || !(snapshot.data ?? false)) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Match Comparison')),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  snapshot.hasError
+                      ? 'Could not load team. Check backend connection.'
+                      : 'No team found. Create or join a team to compare matches.',
+                  style: const TextStyle(color: Colors.white70),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          );
+        }
+        return BlocProvider(
+          create: (_) => ComparisonBloc(
+            comparisonDataSource: getIt<ComparisonRemoteDataSource>(),
+            matchesDataSource: getIt<MatchesRemoteDataSource>(),
+            workspaceDataSource: getIt<WorkspaceRemoteDataSource>(),
+          )..add(const MatchesListLoaded()),
+          child: const _ComparisonPageContent(),
+        );
+      },
     );
   }
 }
@@ -47,23 +86,66 @@ class _ComparisonPageContent extends StatelessWidget {
 
           if (state is ComparisonError) {
             return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(state.message),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      context.read<ComparisonBloc>().add(const MatchesListLoaded());
-                    },
-                    child: const Text('Retry'),
-                  ),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
+                    const SizedBox(height: 16),
+                    Text(
+                      state.message,
+                      style: const TextStyle(color: Colors.white70),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        context.read<ComparisonBloc>().add(const MatchesListLoaded());
+                      },
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ),
               ),
             );
           }
 
           if (state is ComparisonLoaded) {
+            if (state.matches.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.compare_arrows,
+                        size: 56,
+                        color: Colors.white24,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No matches to compare',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: Colors.white70,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Create or open matches first, then select two to compare.',
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 13,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
             return SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Column(
@@ -249,10 +331,27 @@ class _RoundDiffsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (diffs.isEmpty) {
-      return const Card(
+      return Card(
         child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text("No round differences found."),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.check_circle_outline, size: 48, color: Colors.white24),
+              const SizedBox(height: 12),
+              Text(
+                'No round differences found',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: Colors.white70,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'The selected rounds are identical.',
+                style: TextStyle(color: Colors.white54, fontSize: 13),
+              ),
+            ],
+          ),
         ),
       );
     }

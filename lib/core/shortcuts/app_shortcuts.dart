@@ -49,11 +49,7 @@ class AppShortcuts extends StatelessWidget {
             },
           ),
           OpenBenchmarkIntent: CallbackAction<OpenBenchmarkIntent>(
-            onInvoke: (intent) {
-              // Get teamId from context - in production, get from auth state
-              // For now, placeholder
-              // context.go('/benchmark/$teamId');
-            },
+            onInvoke: (intent) => context.go('/benchmark'),
           ),
         },
         child: child,

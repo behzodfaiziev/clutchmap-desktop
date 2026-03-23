@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
+import 'package:printing/printing.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/errors/backend_error_helper.dart';
 import '../../../../core/notifications/toast_service.dart';
 import '../../infrastructure/services/export_service.dart';
 import '../../infrastructure/datasources/share_remote_data_source.dart';
+import '../../infrastructure/datasources/export_remote_data_source.dart';
 import '../bloc/workspace_state.dart';
+import 'dialogs/share_tactic_modal.dart';
 
 class ExportMenu extends StatelessWidget {
   final WorkspaceLoadedState state;
   final GlobalKey? canvasKey;
   final ShareRemoteDataSource shareDataSource;
+  final ExportRemoteDataSource exportDataSource;
   final ExportService exportService;
 
   const ExportMenu({
@@ -16,6 +23,7 @@ class ExportMenu extends StatelessWidget {
     required this.state,
     this.canvasKey,
     required this.shareDataSource,
+    required this.exportDataSource,
     required this.exportService,
   });
 
@@ -27,9 +35,43 @@ class ExportMenu extends StatelessWidget {
       case "export_round":
         await _exportRound(context);
         break;
+      case "download_pdf_server":
+        await _downloadPdfFromServer(context);
+        break;
       case "share":
         await _generateShareLink(context);
         break;
+      case "fullscreen":
+        context.push('/overlay/${state.match.id}');
+        break;
+    }
+  }
+
+  Future<void> _downloadPdfFromServer(BuildContext context) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+      final bytes = await exportDataSource.getMatchPdf(state.match.id);
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        await Printing.sharePdf(bytes: bytes, filename: 'match-${state.match.id}.pdf');
+        if (context.mounted) {
+          ToastService.showSuccess(context, 'PDF downloaded from server');
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        ToastService.showError(
+          context,
+          messageFromException(e, fallback: 'Failed to download PDF from server'),
+        );
+      }
     }
   }
 
@@ -56,7 +98,7 @@ class ExportMenu extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         Navigator.of(context).pop();
-        ToastService.showError(context, 'Failed to export match: $e');
+        ToastService.showError(context, messageFromException(e, fallback: 'Failed to export match'));
       }
     }
   }
@@ -102,7 +144,7 @@ class ExportMenu extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         Navigator.of(context).pop();
-        ToastService.showError(context, 'Failed to export round: $e');
+        ToastService.showError(context, messageFromException(e, fallback: 'Failed to export round'));
       }
     }
   }
@@ -124,9 +166,9 @@ class ExportMenu extends StatelessWidget {
       if (context.mounted) {
         Navigator.of(context).pop();
         
-        final finalUrl = shareUrl ?? (token != null ? "http://localhost:8080/public/v1/match/$token" : null);
+        final finalUrl = shareUrl ?? (token != null ? '${ApiConfig.publicRootUrl}/public/v1/match/$token' : null);
         if (finalUrl != null) {
-          _showShareDialog(context, finalUrl);
+          ShareTacticModal.show(context, shareUrl: finalUrl);
         } else {
           ToastService.showError(context, 'Failed to generate share link');
         }
@@ -134,39 +176,9 @@ class ExportMenu extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         Navigator.of(context).pop();
-        ToastService.showError(context, 'Failed to generate share link: $e');
+        ToastService.showError(context, messageFromException(e, fallback: 'Failed to generate share link'));
       }
     }
-  }
-
-  void _showShareDialog(BuildContext context, String shareUrl) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Share Link"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SelectableText(shareUrl),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: shareUrl));
-                ToastService.showSuccess(context, 'Link copied to clipboard');
-              },
-              icon: const Icon(Icons.copy),
-              label: const Text("Copy Link"),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text("Close"),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -181,6 +193,16 @@ class ExportMenu extends StatelessWidget {
               Icon(Icons.picture_as_pdf, size: 20),
               SizedBox(width: 8),
               Text("Export Match (PDF)"),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: "download_pdf_server",
+          child: Row(
+            children: [
+              Icon(Icons.download, size: 20),
+              SizedBox(width: 8),
+              Text("Download PDF from server"),
             ],
           ),
         ),
@@ -201,6 +223,16 @@ class ExportMenu extends StatelessWidget {
               Icon(Icons.share, size: 20),
               SizedBox(width: 8),
               Text("Generate Share Link"),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: "fullscreen",
+          child: Row(
+            children: [
+              Icon(Icons.fullscreen, size: 20),
+              SizedBox(width: 8),
+              Text("Fullscreen Review"),
             ],
           ),
         ),

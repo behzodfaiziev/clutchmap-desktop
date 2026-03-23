@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/errors/backend_error_helper.dart';
 import '../../infrastructure/datasources/comparison_remote_data_source.dart';
 import '../../../matches/infrastructure/datasources/matches_remote_data_source.dart';
 import '../../../workspace/infrastructure/datasources/workspace_remote_data_source.dart';
@@ -31,7 +32,7 @@ class ComparisonBloc extends Bloc<ComparisonEvent, ComparisonState> {
       final matches = await matchesDataSource.getMatches();
       emit(ComparisonLoaded(matches: matches));
     } catch (e) {
-      emit(ComparisonError('Failed to load matches: $e'));
+      emit(ComparisonError(messageFromException(e, fallback: 'Failed to load matches')));
     }
   }
 
@@ -78,7 +79,7 @@ class ComparisonBloc extends Bloc<ComparisonEvent, ComparisonState> {
           );
           emit(currentState.copyWith(comparisonResult: result));
         } catch (e) {
-          emit(ComparisonError('Failed to compare matches: $e'));
+          emit(ComparisonError(messageFromException(e, fallback: 'Failed to compare matches')));
         }
       }
     }

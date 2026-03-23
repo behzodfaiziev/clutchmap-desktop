@@ -5,12 +5,13 @@ class ErrorInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
     final status = err.response?.statusCode;
+    final backendMessage = _extractBackendMessage(err.response);
 
     if (status == 401) {
       handler.reject(
         DioException(
           requestOptions: err.requestOptions,
-          error: AuthError("Session expired. Please login again."),
+          error: AuthError(backendMessage ?? "Session expired. Please login again."),
           response: err.response,
           type: err.type,
         ),
@@ -21,7 +22,7 @@ class ErrorInterceptor extends Interceptor {
       handler.reject(
         DioException(
           requestOptions: err.requestOptions,
-          error: AuthError("You don't have permission for this action."),
+          error: AuthError(backendMessage ?? "You don't have permission for this action."),
           response: err.response,
           type: err.type,
         ),
@@ -32,7 +33,40 @@ class ErrorInterceptor extends Interceptor {
       handler.reject(
         DioException(
           requestOptions: err.requestOptions,
-          error: ConflictError("Conflict detected. Reload or keep draft."),
+          error: ConflictError(backendMessage ?? "Conflict detected. Reload or keep draft."),
+          response: err.response,
+          type: err.type,
+        ),
+      );
+      return;
+    }
+    if (status == 400) {
+      handler.reject(
+        DioException(
+          requestOptions: err.requestOptions,
+          error: ValidationError(backendMessage ?? "Invalid request."),
+          response: err.response,
+          type: err.type,
+        ),
+      );
+      return;
+    }
+    if (status == 402) {
+      handler.reject(
+        DioException(
+          requestOptions: err.requestOptions,
+          error: QuotaExceededError(backendMessage ?? "Quota exceeded. Upgrade your plan or try again later."),
+          response: err.response,
+          type: err.type,
+        ),
+      );
+      return;
+    }
+    if (status == 429) {
+      handler.reject(
+        DioException(
+          requestOptions: err.requestOptions,
+          error: RateLimitError(backendMessage ?? "Too many requests. Please wait a minute and try again."),
           response: err.response,
           type: err.type,
         ),
@@ -43,7 +77,7 @@ class ErrorInterceptor extends Interceptor {
       handler.reject(
         DioException(
           requestOptions: err.requestOptions,
-          error: ServerError("Server error. Please try again later."),
+          error: ServerError(backendMessage ?? "Server error. Please try again later."),
           response: err.response,
           type: err.type,
         ),
@@ -52,6 +86,15 @@ class ErrorInterceptor extends Interceptor {
     }
 
     handler.next(err);
+  }
+
+  /// Parse backend ApiError-style body: { "message": string, "code": string, ... }.
+  static String? _extractBackendMessage(Response? response) {
+    final data = response?.data;
+    if (data is! Map<String, dynamic>) return null;
+    final message = data['message'];
+    if (message is String && message.isNotEmpty) return message;
+    return null;
   }
 }
 

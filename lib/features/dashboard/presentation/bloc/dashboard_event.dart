@@ -16,5 +16,20 @@ class DashboardLoaded extends DashboardEvent {
   List<Object?> get props => [teamId];
 }
 
+class DashboardInsightsRefreshRequested extends DashboardEvent {
+  final String teamId;
+  const DashboardInsightsRefreshRequested(this.teamId);
+  @override
+  List<Object?> get props => [teamId];
+}
+
+class DashboardInsightDismissed extends DashboardEvent {
+  final String teamId;
+  final String insightId;
+  const DashboardInsightDismissed({required this.teamId, required this.insightId});
+  @override
+  List<Object?> get props => [teamId, insightId];
+}
+
 
 

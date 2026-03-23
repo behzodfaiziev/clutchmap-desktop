@@ -57,9 +57,25 @@ class EvolutionComparisonSection extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Center(
-            child: Text(
-              "Not enough snapshot data for comparison",
-              style: TextStyle(color: Colors.white54),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.timeline, size: 48, color: Colors.white24),
+                const SizedBox(height: 12),
+                Text(
+                  'Not enough snapshot data yet',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Colors.white70,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Play more matches to see evolution over time',
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ),
           ),
         ),

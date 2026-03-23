@@ -1,12 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../design/app_colors.dart';
 import '../design/app_spacing.dart';
 import '../design/app_radius.dart';
 
 class AppTheme {
+  static const _primary = AppColors.primary;
+
   static ThemeData get darkTheme => ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF111111),
-        cardColor: const Color(0xFF1A1A1A),
-        primaryColor: const Color(0xFF00E5FF),
+        scaffoldBackgroundColor: AppColors.backgroundDark,
+        cardColor: AppColors.neutralSurface,
+        primaryColor: _primary,
+        colorScheme: ColorScheme.dark(
+          primary: _primary,
+          surface: AppColors.neutralSurface,
+          onPrimary: AppColors.backgroundDark,
+          onSurface: Colors.white,
+          onSurfaceVariant: Colors.white70,
+        ),
+        textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(
@@ -45,7 +57,9 @@ class AppTheme {
   static ThemeData get lightTheme => ThemeData.light().copyWith(
         scaffoldBackgroundColor: Colors.grey.shade50,
         cardColor: Colors.white,
-        primaryColor: const Color(0xFF00E5FF),
+        primaryColor: _primary,
+        colorScheme: ColorScheme.light(primary: _primary),
+        textTheme: GoogleFonts.interTextTheme(ThemeData.light().textTheme),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(

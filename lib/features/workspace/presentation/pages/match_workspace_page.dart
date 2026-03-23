@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/design/app_colors.dart';
+import '../../../../core/design/app_radius.dart';
 import '../../../../core/di/injection.dart';
-import '../../../../core/network/api_client.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../infrastructure/datasources/workspace_remote_data_source.dart';
@@ -24,8 +25,9 @@ import '../widgets/dialogs/unsaved_changes_dialog.dart';
 import '../widgets/dialogs/version_conflict_dialog.dart';
 import '../widgets/export_menu.dart';
 import '../../../../core/websocket/websocket_service.dart';
-import '../../infrastructure/services/export_service.dart';
 import '../../infrastructure/datasources/share_remote_data_source.dart';
+import '../../infrastructure/datasources/export_remote_data_source.dart';
+import '../../infrastructure/services/export_service.dart';
 import '../../../templates/presentation/widgets/create_template_dialog.dart';
 import '../../../templates/presentation/bloc/template_bloc.dart';
 import '../../../templates/infrastructure/datasources/template_remote_data_source.dart';
@@ -42,28 +44,31 @@ class MatchWorkspacePage extends StatefulWidget {
 
 class _MatchWorkspacePageState extends State<MatchWorkspacePage> {
   late WorkspaceBloc _workspaceBloc;
+  late String _currentUserId;
+  StreamSubscription<WorkspaceState>? _workspaceSubscription;
+  Timer? _lockRenewTimer;
   StreamSubscription<bool>? _wsConnectionSubscription;
   bool _isReconnecting = false;
   final GlobalKey _canvasKey = GlobalKey();
   final ExportService _exportService = ExportService();
   late final ShareRemoteDataSource _shareDataSource;
+  late final ExportRemoteDataSource _exportDataSource;
 
   @override
   void initState() {
     super.initState();
     final authState = context.read<AuthBloc>().state;
-    final currentUserId = authState is AuthAuthenticated
+    _currentUserId = authState is AuthAuthenticated
         ? authState.user.id
         : '';
 
     _workspaceBloc = WorkspaceBloc(
-      dataSource: WorkspaceRemoteDataSource(
-        getIt<ApiClient>(),
-      ),
-      currentUserId: currentUserId,
+      dataSource: getIt<WorkspaceRemoteDataSource>(),
+      currentUserId: _currentUserId,
     )..add(WorkspaceLoaded(widget.id));
 
-    _shareDataSource = ShareRemoteDataSource(getIt<ApiClient>());
+    _shareDataSource = getIt<ShareRemoteDataSource>();
+    _exportDataSource = getIt<ExportRemoteDataSource>();
 
     // Listen for draft recovery requests
     _workspaceBloc.stream.listen((state) {
@@ -78,6 +83,34 @@ class _MatchWorkspacePageState extends State<MatchWorkspacePage> {
       if (state is WorkspaceLoadedState && state.versionConflict) {
         final currentRound = state.rounds[state.selectedIndex];
         _handleVersionConflict(context, currentRound.id);
+      }
+    });
+
+    // Lock renew keep-alive when current user holds the round lock
+    _workspaceSubscription = _workspaceBloc.stream.listen((state) {
+      _lockRenewTimer?.cancel();
+      if (state is WorkspaceLoadedState &&
+          state.rounds.isNotEmpty &&
+          state.isRoundLockedByCurrentUser(
+            state.rounds[state.selectedIndex].id,
+            _currentUserId,
+          )) {
+        _lockRenewTimer = Timer.periodic(
+          const Duration(seconds: 45),
+          (_) {
+            if (!_workspaceBloc.isClosed) {
+              final s = _workspaceBloc.state;
+              if (s is WorkspaceLoadedState &&
+                  s.rounds.isNotEmpty &&
+                  s.isRoundLockedByCurrentUser(
+                    s.rounds[s.selectedIndex].id,
+                    _currentUserId,
+                  )) {
+                _workspaceBloc.add(LockRenewRequested(s.rounds[s.selectedIndex].id));
+              }
+            }
+          },
+        );
       }
     });
 
@@ -100,6 +133,30 @@ class _MatchWorkspacePageState extends State<MatchWorkspacePage> {
     }
   }
 
+  String _workspaceTitle(WorkspaceLoadedState state) {
+    final parts = <String>[];
+    if (state.match.gameName != null && state.match.gameName!.isNotEmpty) {
+      parts.add(state.match.gameName!);
+    }
+    if (state.match.mapName != null && state.match.mapName!.isNotEmpty) {
+      parts.add(state.match.mapName!);
+    }
+    parts.add(state.match.title);
+    if (state.match.opponentName != null && state.match.opponentName!.isNotEmpty) {
+      parts.add('vs ${state.match.opponentName!}');
+    }
+    return parts.join(' • ');
+  }
+
+  static String _formatUpdated(DateTime updatedAt) {
+    final now = DateTime.now();
+    final diff = now.difference(updatedAt);
+    if (diff.inMinutes < 60) return 'Updated ${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return 'Updated ${diff.inHours}h ago';
+    if (diff.inDays < 7) return 'Updated ${diff.inDays}d ago';
+    return 'Updated ${updatedAt.month}/${updatedAt.day}';
+  }
+
   Future<bool> _onWillPop() async {
     final state = _workspaceBloc.state;
     if (state is WorkspaceLoadedState && state.hasUnsavedChanges) {
@@ -111,9 +168,11 @@ class _MatchWorkspacePageState extends State<MatchWorkspacePage> {
 
   @override
   void dispose() {
+    _lockRenewTimer?.cancel();
+    _workspaceSubscription?.cancel();
     // Release lock for currently selected round
     final state = _workspaceBloc.state;
-    if (state is WorkspaceLoadedState) {
+    if (state is WorkspaceLoadedState && state.rounds.isNotEmpty) {
       final selectedRound = state.rounds[state.selectedIndex];
       _workspaceBloc.add(ReleaseLock(selectedRound.id));
     }
@@ -129,7 +188,7 @@ class _MatchWorkspacePageState extends State<MatchWorkspacePage> {
         BlocProvider.value(value: _workspaceBloc),
         BlocProvider(
           create: (context) => TemplateBloc(
-            dataSource: TemplateRemoteDataSource(getIt<ApiClient>()),
+            dataSource: getIt<TemplateRemoteDataSource>(),
           ),
         ),
       ],
@@ -171,26 +230,92 @@ class _MatchWorkspacePageState extends State<MatchWorkspacePage> {
                 if (_isReconnecting) const WebSocketReconnectingBanner(),
                 // Presence Avatars
                 const PresenceAvatars(),
-                // Toolbar with Create Template button and Unsaved Changes indicator
+                // Toolbar (ui_stitch tactical editor: primary, panel-dark)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  height: 64,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade900,
+                    color: AppColors.neutralSurface.withValues(alpha: 0.9),
                     border: Border(
-                      bottom: BorderSide(color: Colors.white24, width: 1),
+                      bottom: BorderSide(color: AppColors.neutralBorder, width: 1),
                     ),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Unsaved Changes Indicator
-                      if (state.hasUnsavedChanges) const UnsavedChangesIndicator(),
+                      // Match title and opponent
+                      Expanded(
+                        child: Row(
+                          children: [
+                            if (state.hasUnsavedChanges) const UnsavedChangesIndicator(),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                _workspaceTitle(state),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (state.match.archived) ...[
+                              const SizedBox(width: 8),
+                              Chip(
+                                label: const Text(
+                                  'Archived',
+                                  style: TextStyle(color: Colors.white70, fontSize: 11),
+                                ),
+                                backgroundColor: Colors.white12,
+                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              const SizedBox(width: 8),
+                              TextButton.icon(
+                                onPressed: () {
+                                  _workspaceBloc.add(const MatchUnarchiveRequested());
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Match restored')),
+                                  );
+                                },
+                                icon: const Icon(Icons.restore, size: 18, color: Colors.white70),
+                                label: const Text('Restore', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                              ),
+                            ] else ...[
+                              const SizedBox(width: 8),
+                              TextButton.icon(
+                                onPressed: () {
+                                  _workspaceBloc.add(const MatchArchiveRequested());
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Match archived')),
+                                  );
+                                },
+                                icon: const Icon(Icons.archive_outlined, size: 18, color: Colors.white70),
+                                label: const Text('Archive', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                              ),
+                            ],
+                            if (state.match.updatedAt != null) ...[
+                              const SizedBox(width: 12),
+                              Text(
+                                _formatUpdated(state.match.updatedAt!),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.white38,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                       const Spacer(),
                       // Export Menu
                       ExportMenu(
                         state: state,
                         canvasKey: _canvasKey,
                         shareDataSource: _shareDataSource,
+                        exportDataSource: _exportDataSource,
                         exportService: _exportService,
                       ),
                       const SizedBox(width: 8),
@@ -210,19 +335,22 @@ class _MatchWorkspacePageState extends State<MatchWorkspacePage> {
                     ],
                   ),
                 ),
-                // Main Content
+                // Main Content: left toolstrip (ui_stitch) + round nav + canvas + right panel
                 Expanded(
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      const _EditorToolstrip(),
+                      Container(width: 1, color: AppColors.neutralBorder),
                       SizedBox(
                         width: 220,
                         child: RoundNavigation(),
                       ),
-                      const VerticalDivider(width: 1, color: Colors.white24),
+                      Container(width: 1, color: AppColors.neutralBorder),
                       Expanded(
                         child: RoundEditor(canvasKey: _canvasKey),
                       ),
-                      const VerticalDivider(width: 1, color: Colors.white24),
+                      Container(width: 1, color: AppColors.neutralBorder),
                       SizedBox(
                         width: 300,
                         child: DefaultTabController(
@@ -259,11 +387,21 @@ class _MatchWorkspacePageState extends State<MatchWorkspacePage> {
                                     AiCoachPanel(
                                       matchId: widget.id,
                                       workspaceState: state,
+                                      onNavigateToRound: (roundNumber) {
+                                        final st = _workspaceBloc.state;
+                                        if (st is WorkspaceLoadedState) {
+                                          final idx = st.rounds
+                                              .indexWhere((r) => r.roundNumber == roundNumber);
+                                          if (idx >= 0) {
+                                            _workspaceBloc.add(RoundSelected(idx));
+                                          }
+                                        }
+                                      },
                                     ),
                                   ],
                                 ),
                               ),
-                              const VerticalDivider(width: 1, color: Colors.white24),
+                              Container(width: 1, color: AppColors.neutralBorder),
                               SizedBox(
                                 height: 200,
                                 child: TacticalEventsPanel(),
@@ -285,6 +423,80 @@ class _MatchWorkspacePageState extends State<MatchWorkspacePage> {
           }
           return const SizedBox.shrink();
         },
+        ),
+      ),
+    );
+  }
+}
+
+/// Left slim toolbar for tactical editor (ui_stitch clutch_map_tactical_editor_canvas).
+class _EditorToolstrip extends StatelessWidget {
+  const _EditorToolstrip();
+
+  static const double width = 64;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      color: AppColors.neutralSurface,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          const SizedBox(height: 16),
+          _ToolButton(icon: Icons.near_me, title: 'Selection'),
+          _ToolButton(icon: Icons.person_pin_circle_outlined, title: 'Player Markers', active: true),
+          _ToolButton(icon: Icons.gesture, title: 'Path Tool'),
+          _ToolButton(icon: Icons.trending_flat, title: 'Arrow Tool'),
+          _ToolButton(icon: Icons.cloud_outlined, title: 'Smoke/Utility'),
+          const Spacer(),
+          _ToolButton(icon: Icons.sticky_note_2_outlined, title: 'Strategy Notes'),
+          _ToolButton(icon: Icons.auto_fix_high, title: 'Eraser', color: Colors.red),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToolButton extends StatelessWidget {
+  const _ToolButton({
+    required this.icon,
+    required this.title,
+    this.active = false,
+    this.color,
+  });
+
+  final IconData icon;
+  final String title;
+  final bool active;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Tooltip(
+        message: title,
+        child: Material(
+          color: active
+              ? AppColors.primary.withValues(alpha: 0.2)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          child: InkWell(
+            onTap: () {},
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Icon(
+                icon,
+                size: 24,
+                color: active
+                    ? AppColors.primary
+                    : (color ?? Colors.white54),
+              ),
+            ),
+          ),
         ),
       ),
     );

@@ -18,7 +18,7 @@ class ShareRemoteDataSource {
   }
 
   Future<Map<String, dynamic>> getPublicMatch(String token) async {
-    final response = await api.get("/public/v1/match/$token");
+    final response = await api.getPublic("/public/v1/match/$token");
     final data = response.data as Map<String, dynamic>;
     final responseData = data['data'] as Map<String, dynamic>? ?? data;
     return responseData;

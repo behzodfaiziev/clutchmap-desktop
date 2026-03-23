@@ -10,6 +10,8 @@ import '../bloc/workspace_state.dart';
 import 'canvas/tactical_canvas.dart';
 import 'canvas/canvas_models.dart';
 import 'economy_section.dart';
+import 'valorant_round_options_section.dart';
+import 'valorant_strategy_indicators_section.dart';
 
 class RoundEditor extends StatefulWidget {
   final GlobalKey? canvasKey;
@@ -156,7 +158,19 @@ class _RoundEditorState extends State<RoundEditor> {
                 ),
               ),
               const SizedBox(height: 20),
-              // Economy Section
+              // Valorant: agent selector, ult toggles, credits (DAY_127)
+              if (state.match.gameCode?.toUpperCase() == 'VALORANT') ...[
+                ValorantRoundOptionsSection(
+                  roundId: round.id,
+                  canEdit: canEdit,
+                ),
+                const SizedBox(height: 12),
+                ValorantStrategyIndicatorsSection(
+                  roundContext: round.gameData,
+                ),
+                const SizedBox(height: 20),
+              ],
+              // Economy Section (CS2 buy types; Valorant can still show)
               EconomySection(
                 roundId: round.id,
                 buyType: state.buyTypes[round.id],

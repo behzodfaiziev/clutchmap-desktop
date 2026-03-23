@@ -20,6 +20,10 @@ class SearchResultTile extends StatelessWidget {
         return Icons.sports_esports;
       case 'ROUND':
         return Icons.looks_one;
+      case 'ROUND_NOTE':
+        return Icons.note;
+      case 'VOD_TAG':
+        return Icons.video_library;
       case 'TACTICAL_EVENT':
         return Icons.event;
       case 'OPPONENT':
@@ -35,6 +39,9 @@ class SearchResultTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final subtitle = result.sourceType != null
+        ? _formatType(result.sourceType!)
+        : _formatType(result.type);
     return ListTile(
       selected: isSelected,
       selectedTileColor: Colors.blue.shade900.withValues(alpha: 0.3),
@@ -48,21 +55,31 @@ class SearchResultTile extends StatelessWidget {
           color: isSelected ? Colors.white : Colors.white70,
           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
         ),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        _formatType(result.type),
+        subtitle + (result.roundNumber != null ? ' • Round ${result.roundNumber}' : ''),
         style: TextStyle(
           color: isSelected ? Colors.white54 : Colors.white38,
         ),
       ),
-      trailing: result.roundNumber != null
+      trailing: result.score != null
           ? Text(
-              "Round ${result.roundNumber}",
+              '${(result.score! * 100).round()}%',
               style: TextStyle(
                 color: isSelected ? Colors.white54 : Colors.white38,
+                fontSize: 12,
               ),
             )
-          : null,
+          : result.roundNumber != null
+              ? Text(
+                  "Round ${result.roundNumber}",
+                  style: TextStyle(
+                    color: isSelected ? Colors.white54 : Colors.white38,
+                  ),
+                )
+              : null,
       onTap: onTap,
     );
   }

@@ -34,17 +34,28 @@ class BenchmarkRemoteDataSource {
   }
 
   Future<List<Map<String, dynamic>>> getTeamSnapshots(String teamId, {int window = 30}) async {
-    // For now, we'll use the evolution endpoint and extract snapshots
-    // In a real implementation, there would be a dedicated snapshots endpoint
     final response = await api.get("/teams/$teamId/evolution");
     final data = response.data as Map<String, dynamic>;
     final responseData = data['data'] as Map<String, dynamic>? ?? data;
     final history = responseData['history'] as List<dynamic>? ?? [];
-    
-    // Convert evolution history to snapshot format
-    // We'll need to get full snapshot data from the evolution endpoint
-    // For now, return empty list - will be populated when backend adds snapshots endpoint
-    return [];
+
+    // Backend TeamEvolutionView.SnapshotHistoryView has date + overallScore only.
+    // Map to TeamSnapshot shape (date, aggression, structure, variety, risk).
+    final out = <Map<String, dynamic>>[];
+    for (final item in history) {
+      final map = item as Map<String, dynamic>;
+      final date = map['date'] as String? ?? map['snapshotDate'] as String?;
+      if (date == null || date.isEmpty) continue;
+      final overall = (map['overallScore'] as num?)?.toInt() ?? 0;
+      out.add({
+        'date': date,
+        'aggression': overall,
+        'structure': overall,
+        'variety': overall,
+        'risk': overall,
+      });
+    }
+    return out;
   }
 }
 

@@ -3,6 +3,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:go_router/go_router.dart';
+
 import 'core/di/injection.dart';
 import 'core/logging/app_logger.dart';
 import 'core/routing/app_router.dart';
@@ -56,13 +58,19 @@ class App extends StatelessWidget {
                 routerConfig: createRouter(context),
                 builder: (context, child) {
                   if (child == null) return const SizedBox.shrink();
-                  // Don't wrap login page in AppShell - check via BlocBuilder
                   return BlocBuilder<AuthBloc, AuthState>(
                     builder: (context, authState) {
                       if (authState is AuthUnauthenticated) {
                         return child;
                       }
-                      return AppShortcuts(child: AppShell(child: child));
+                      final path = GoRouterState.of(context).uri.path;
+                      final showRightPanel = path != '/' && path != '/team-select';
+                      return AppShortcuts(
+                        child: AppShell(
+                          child: child,
+                          showRightPanel: showRightPanel,
+                        ),
+                      );
                     },
                   );
                 },

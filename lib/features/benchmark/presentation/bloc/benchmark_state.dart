@@ -14,6 +14,7 @@ abstract class BenchmarkState extends Equatable {
 class BenchmarkLoading extends BenchmarkState {}
 
 class BenchmarkLoadedState extends BenchmarkState {
+  final String teamId;
   final BenchmarkData benchmark;
   final MetaAlignment metaAlignment;
   final List<MetaTrendPoint> metaTrends;
@@ -22,6 +23,7 @@ class BenchmarkLoadedState extends BenchmarkState {
   final int snapshotWindow;
 
   const BenchmarkLoadedState({
+    required this.teamId,
     required this.benchmark,
     required this.metaAlignment,
     required this.metaTrends,
@@ -31,6 +33,7 @@ class BenchmarkLoadedState extends BenchmarkState {
   });
 
   BenchmarkLoadedState copyWith({
+    String? teamId,
     BenchmarkData? benchmark,
     MetaAlignment? metaAlignment,
     List<MetaTrendPoint>? metaTrends,
@@ -39,6 +42,7 @@ class BenchmarkLoadedState extends BenchmarkState {
     int? snapshotWindow,
   }) {
     return BenchmarkLoadedState(
+      teamId: teamId ?? this.teamId,
       benchmark: benchmark ?? this.benchmark,
       metaAlignment: metaAlignment ?? this.metaAlignment,
       metaTrends: metaTrends ?? this.metaTrends,
@@ -50,6 +54,7 @@ class BenchmarkLoadedState extends BenchmarkState {
 
   @override
   List<Object?> get props => [
+        teamId,
         benchmark,
         metaAlignment,
         metaTrends,

@@ -65,6 +65,15 @@ class LockStatusUpdated extends WorkspaceEvent {
   List<Object?> get props => [roundId, status];
 }
 
+/// Extend current user's lock on a round (keep-alive). Backend: POST .../lock/renew.
+class LockRenewRequested extends WorkspaceEvent {
+  final String roundId;
+  const LockRenewRequested(this.roundId);
+
+  @override
+  List<Object?> get props => [roundId];
+}
+
 class TacticalEventAdded extends WorkspaceEvent {
   final String roundId;
   final String eventType;
@@ -193,6 +202,18 @@ class RecommendationApplied extends WorkspaceEvent {
   List<Object?> get props => [recommendationId];
 }
 
+class PreviewApplyRequested extends WorkspaceEvent {
+  final String recommendationId;
+  const PreviewApplyRequested(this.recommendationId);
+
+  @override
+  List<Object?> get props => [recommendationId];
+}
+
+class ClearRecommendationPreview extends WorkspaceEvent {
+  const ClearRecommendationPreview();
+}
+
 class RecommendationsLoaded extends WorkspaceEvent {
   final String matchId;
   const RecommendationsLoaded(this.matchId);
@@ -303,5 +324,15 @@ class WebSocketDisconnected extends WorkspaceEvent {
 
 class WebSocketReconnected extends WorkspaceEvent {
   const WebSocketReconnected();
+}
+
+/// User requested to archive the current match (from workspace toolbar).
+class MatchArchiveRequested extends WorkspaceEvent {
+  const MatchArchiveRequested();
+}
+
+/// User requested to restore (unarchive) the current match (from workspace toolbar).
+class MatchUnarchiveRequested extends WorkspaceEvent {
+  const MatchUnarchiveRequested();
 }
 

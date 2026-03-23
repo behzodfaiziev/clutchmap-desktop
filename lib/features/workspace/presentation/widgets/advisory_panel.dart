@@ -26,7 +26,27 @@ class _AdvisoryPanelState extends State<AdvisoryPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<WorkspaceBloc, WorkspaceState>(
+    return BlocConsumer<WorkspaceBloc, WorkspaceState>(
+      listenWhen: (prev, curr) {
+        if (curr is! WorkspaceLoadedState) return false;
+        final preview = curr.recommendationPreview;
+        return preview != null && preview.isNotEmpty;
+      },
+      listener: (context, state) {
+        final s = state as WorkspaceLoadedState;
+        final preview = s.recommendationPreview!;
+        final entry = preview.entries.first;
+        if (!context.mounted) return;
+        context.read<WorkspaceBloc>().add(const ClearRecommendationPreview());
+        showDialog<void>(
+          context: context,
+          builder: (ctx) => _PreviewApplyDialog(
+            recommendationId: entry.key,
+            data: entry.value,
+          ),
+        );
+      },
+      buildWhen: (prev, curr) => true,
       builder: (context, state) {
         if (state is! WorkspaceLoadedState) {
           return const Center(child: CircularProgressIndicator());
@@ -47,11 +67,37 @@ class _AdvisoryPanelState extends State<AdvisoryPanel> {
                       ),
                 ),
                 const SizedBox(height: 16),
+                if (state.match.archived) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 18, color: Colors.orange.shade300),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            "Archived matches are read-only. Simulate and Optimize are disabled.",
+                            style: TextStyle(
+                              color: Colors.orange.shade300,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 // Simulate Button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: state.advisoryLoading
+                    onPressed: state.advisoryLoading || state.match.archived
                         ? null
                         : () {
                             context.read<WorkspaceBloc>().add(
@@ -83,7 +129,7 @@ class _AdvisoryPanelState extends State<AdvisoryPanel> {
                       child: Text(mode.displayName),
                     );
                   }).toList(),
-                  onChanged: state.advisoryLoading
+                  onChanged: state.advisoryLoading || state.match.archived
                       ? null
                       : (value) {
                           if (value != null) {
@@ -95,7 +141,7 @@ class _AdvisoryPanelState extends State<AdvisoryPanel> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: state.advisoryLoading
+                    onPressed: state.advisoryLoading || state.match.archived
                         ? null
                         : () {
                             context.read<WorkspaceBloc>().add(
@@ -267,23 +313,81 @@ class RecommendationCard extends StatelessWidget {
                 style: const TextStyle(color: Colors.white70),
               ),
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  context.read<WorkspaceBloc>().add(
-                        RecommendationApplied(recommendation.id),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      context.read<WorkspaceBloc>().add(
+                            PreviewApplyRequested(recommendation.id),
+                          );
+                    },
+                    icon: const Icon(Icons.preview, size: 18),
+                    label: const Text('Preview'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      context.read<WorkspaceBloc>().add(
+                            RecommendationApplied(recommendation.id),
+                          );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Recommendation applied")),
                       );
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Recommendation applied")),
-                  );
-                },
-                child: const Text("Apply"),
-              ),
+                    },
+                    child: const Text("Apply"),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _PreviewApplyDialog extends StatelessWidget {
+  final String recommendationId;
+  final Map<String, dynamic> data;
+
+  const _PreviewApplyDialog({
+    required this.recommendationId,
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Preview apply'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Recommendation: ${recommendationId.length > 8 ? recommendationId.substring(0, 8) : recommendationId}...',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            ...data.entries.map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                '${e.key}: ${e.value}',
+                style: const TextStyle(fontSize: 13),
+              ),
+            )),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
     );
   }
 }

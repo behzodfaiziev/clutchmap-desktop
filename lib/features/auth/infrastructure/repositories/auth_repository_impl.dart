@@ -3,14 +3,17 @@ import '../../domain/repositories/auth_repository.dart';
 import '../datasources/auth_remote_data_source.dart';
 import '../models/auth_response_model.dart';
 import '../../../../core/storage/token_storage.dart';
+import '../../../../core/team/active_team_service.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   final AuthRemoteDataSource remoteDataSource;
   final TokenStorage tokenStorage;
+  final ActiveTeamService? activeTeamService;
 
   AuthRepositoryImpl({
     required this.remoteDataSource,
     required this.tokenStorage,
+    this.activeTeamService,
   });
 
   @override
@@ -20,17 +23,14 @@ class AuthRepositoryImpl implements AuthRepository {
     
     await tokenStorage.saveToken(authResponse.token);
     
-    // For now, return a user with email from login
-    // In production, decode JWT to get user ID and other info
-    return AuthUser(
-      id: 'temp-id', // Will be replaced with JWT decoding
-      email: email,
-    );
+    // Use the user data from the auth response
+    return authResponse.toEntity();
   }
 
   @override
   Future<void> logout() async {
     await tokenStorage.clear();
+    activeTeamService?.clear();
   }
 
   @override

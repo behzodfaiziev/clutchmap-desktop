@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import '../config/api_config.dart';
 import '../logging/app_logger.dart';
 
 class WebSocketService {
@@ -21,9 +22,9 @@ class WebSocketService {
   void _connectInternal() {
     try {
       disconnect(); // Close existing connection if any
-      _channel = WebSocketChannel.connect(
-        Uri.parse("ws://localhost:8080/ws?token=$_token"),
-      );
+      final path = '${ApiConfig.wsStrategyPath}?token=$_token';
+      final url = ApiConfig.webSocketUrl(path);
+      _channel = WebSocketChannel.connect(Uri.parse(url));
       _reconnectAttempt = 0;
       _isReconnecting = false;
       _connectionController.add(true);

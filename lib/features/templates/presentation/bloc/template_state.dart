@@ -28,11 +28,13 @@ class TemplateLoadedState extends TemplateState {
     List<StrategyTemplate>? templates,
     TemplateDetail? selectedTemplate,
     String? createdMatchId,
+    bool clearSelectedTemplate = false,
+    bool clearCreatedMatchId = false,
   }) {
     return TemplateLoadedState(
       templates: templates ?? this.templates,
-      selectedTemplate: selectedTemplate ?? this.selectedTemplate,
-      createdMatchId: createdMatchId ?? this.createdMatchId,
+      selectedTemplate: clearSelectedTemplate ? null : (selectedTemplate ?? this.selectedTemplate),
+      createdMatchId: clearCreatedMatchId ? null : (createdMatchId ?? this.createdMatchId),
     );
   }
 

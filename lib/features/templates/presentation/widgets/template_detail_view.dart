@@ -51,8 +51,7 @@ class _TemplateDetailViewState extends State<TemplateDetailView> {
           } else if (state is TemplateLoadedState && state.createdMatchId != null) {
             Navigator.of(dialogContext).pop(); // Close loading dialog
             ToastService.showSuccess(context, 'Match created from template');
-            context.pop(); // Go back to template list
-            // Navigate to new match
+            context.read<TemplateBloc>().add(const TemplateSelectionCleared());
             context.go("/match/${state.createdMatchId}");
           }
         },
@@ -71,7 +70,7 @@ class _TemplateDetailViewState extends State<TemplateDetailView> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            context.pop();
+            context.read<TemplateBloc>().add(const TemplateSelectionCleared());
           },
         ),
       ),

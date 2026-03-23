@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/di/injection.dart';
-import '../../../../core/network/api_client.dart';
+import '../../../../core/team/active_team_service.dart';
+import '../../../capabilities/infrastructure/datasources/capabilities_remote_data_source.dart';
 import '../../infrastructure/datasources/ai_coach_remote_data_source.dart';
 import '../../domain/entities/chat_message.dart';
 import '../../domain/entities/ai_coach_response.dart';
@@ -13,15 +14,21 @@ import '../../../workspace/presentation/bloc/workspace_state.dart';
 class AiCoachPanel extends StatelessWidget {
   final String matchId;
   final WorkspaceLoadedState workspaceState;
+  /// When set, the "go to round" button on suggestions will switch the workspace to that round.
+  final void Function(int roundNumber)? onNavigateToRound;
 
   const AiCoachPanel({
     super.key,
     required this.matchId,
     required this.workspaceState,
+    this.onNavigateToRound,
   });
 
   Map<String, dynamic> _buildCompressedContext() {
     return {
+      "gameType": workspaceState.match.gameCode?.isNotEmpty == true
+          ? workspaceState.match.gameCode!
+          : "VALORANT",
       "matchSummary": {
         "aggression": workspaceState.matchIntel?.aggression ?? 0,
         "structure": workspaceState.matchIntel?.structure ?? 0,
@@ -53,13 +60,85 @@ class AiCoachPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final teamId = getIt<ActiveTeamService>().activeTeamId;
+    if (teamId == null || teamId.isEmpty) {
+      return _buildCoachContent(context);
+    }
+    return FutureBuilder<TeamCapabilities>(
+      future: getIt<CapabilitiesRemoteDataSource>().getCapabilities(teamId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+        if (snapshot.hasData && !snapshot.data!.isAiCoachAllowed) {
+          return _UpgradeBanner(planName: snapshot.data!.planName);
+        }
+        return _buildCoachContent(context);
+      },
+    );
+  }
+
+  Widget _buildCoachContent(BuildContext context) {
     return BlocProvider(
       create: (_) => AiCoachBloc(
-        dataSource: AiCoachRemoteDataSource(getIt<ApiClient>()),
+        dataSource: getIt<AiCoachRemoteDataSource>(),
       ),
       child: _AiCoachPanelContent(
         matchId: matchId,
         buildContext: _buildCompressedContext,
+        onNavigateToRound: onNavigateToRound,
+      ),
+    );
+  }
+}
+
+class _UpgradeBanner extends StatelessWidget {
+  final String planName;
+
+  const _UpgradeBanner({required this.planName});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Card(
+          color: Colors.grey.shade900,
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock_outline, size: 48, color: Colors.amber.shade700),
+                const SizedBox(height: 16),
+                const Text(
+                  'Upgrade to PRO to access AI Coach.',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Your current plan ($planName) does not include AI Coach. Upgrade to get tactical advice and suggestions.',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  onPressed: () {
+                    // TODO: navigate to upgrade / settings
+                  },
+                  icon: const Icon(Icons.workspace_premium),
+                  label: const Text('Upgrade Plan'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -68,10 +147,12 @@ class AiCoachPanel extends StatelessWidget {
 class _AiCoachPanelContent extends StatefulWidget {
   final String matchId;
   final Map<String, dynamic> Function() buildContextFn;
+  final void Function(int roundNumber)? onNavigateToRound;
 
   const _AiCoachPanelContent({
     required this.matchId,
     required Map<String, dynamic> Function() buildContext,
+    this.onNavigateToRound,
   }) : buildContextFn = buildContext;
 
   @override
@@ -292,7 +373,7 @@ class _AiCoachPanelContentState extends State<_AiCoachPanelContent> {
                 return Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
+                    color: Colors.blue.withValues(alpha: 0.1),
                     border: Border(
                       top: BorderSide(color: Colors.white24, width: 1),
                     ),
@@ -321,9 +402,10 @@ class _AiCoachPanelContentState extends State<_AiCoachPanelContent> {
                             ),
                             trailing: IconButton(
                               icon: const Icon(Icons.open_in_new, size: 16),
-                              onPressed: () {
-                                // TODO: Navigate to round
-                              },
+                              tooltip: 'Go to round ${s.roundNumber}',
+                              onPressed: widget.onNavigateToRound != null
+                                  ? () => widget.onNavigateToRound!(s.roundNumber)
+                                  : null,
                             ),
                           )),
                     ],
@@ -334,11 +416,13 @@ class _AiCoachPanelContentState extends State<_AiCoachPanelContent> {
             return const SizedBox.shrink();
           },
         ),
-        // Confidence Indicator
+        // Confidence Indicator & Citations
         BlocBuilder<AiCoachBloc, AiCoachState>(
           builder: (context, state) {
             if (state is AiCoachLoaded && state.lastResponse != null) {
-              final confidence = state.lastResponse!.confidence;
+              final response = state.lastResponse!;
+              final confidence = response.confidence;
+              final citations = response.citations;
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
@@ -348,6 +432,7 @@ class _AiCoachPanelContentState extends State<_AiCoachPanelContent> {
                   ),
                 ),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
@@ -373,6 +458,17 @@ class _AiCoachPanelContentState extends State<_AiCoachPanelContent> {
                         confidence > 70 ? Colors.green : Colors.orange,
                       ),
                     ),
+                    if (citations.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        "Sources: ${citations.join(", ")}",
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white70,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               );

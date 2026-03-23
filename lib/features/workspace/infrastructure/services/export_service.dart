@@ -30,6 +30,10 @@ class ExportService {
             ),
           ),
           pw.SizedBox(height: 16),
+          if (match.gameName != null && match.gameName!.isNotEmpty)
+            pw.Text("Game: ${match.gameName}"),
+          if (match.gameName != null && match.gameName!.isNotEmpty)
+            pw.SizedBox(height: 8),
           pw.Text("Map: ${match.mapName ?? 'N/A'}"),
           pw.SizedBox(height: 20),
           pw.Divider(),

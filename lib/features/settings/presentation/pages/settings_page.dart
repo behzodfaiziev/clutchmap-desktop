@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/di/injection.dart';
-import '../../../../core/network/api_client.dart';
-import '../../../auth/presentation/bloc/auth_bloc.dart';
+import '../../../../core/errors/backend_error_helper.dart';
 import '../../infrastructure/datasources/settings_local_data_source.dart';
 import '../../infrastructure/datasources/system_remote_data_source.dart';
 import '../bloc/settings_bloc.dart';
@@ -24,6 +24,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   String? appVersion;
   Map<String, dynamic>? capabilities;
+  String? capabilitiesError;
 
   @override
   void initState() {
@@ -41,13 +42,15 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _loadCapabilities() async {
     try {
-      final dataSource = SystemRemoteDataSource(getIt<ApiClient>());
-      final caps = await dataSource.getCapabilities();
+      final caps = await getIt<SystemRemoteDataSource>().getCapabilities();
       setState(() {
         capabilities = caps;
+        capabilitiesError = null;
       });
     } catch (e) {
-      // Ignore errors
+      setState(() {
+        capabilitiesError = messageFromException(e, fallback: 'Could not load backend version');
+      });
     }
   }
 
@@ -76,6 +79,8 @@ class _SettingsPageState extends State<SettingsPage> {
             SystemSection(
               appVersion: appVersion,
               backendVersion: capabilities?['version'] as String?,
+              backendVersionError: capabilitiesError,
+              backendBaseUrl: ApiConfig.baseUrl,
             ),
             const SizedBox(height: 16),
             BlocBuilder<SettingsBloc, SettingsState>(
@@ -113,6 +118,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 if (state.settings.devMode) {
                   return DevToolsSection(
                     capabilities: capabilities,
+                    capabilitiesError: capabilitiesError,
                   );
                 }
                 return const SizedBox.shrink();

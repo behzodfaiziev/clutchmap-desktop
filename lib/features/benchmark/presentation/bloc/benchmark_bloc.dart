@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/errors/backend_error_helper.dart';
 import '../../domain/entities/benchmark_data.dart';
 import '../../domain/entities/meta_alignment.dart';
 import '../../domain/entities/meta_trend_point.dart';
@@ -42,6 +43,7 @@ class BenchmarkBloc extends Bloc<BenchmarkEvent, BenchmarkState> {
           .toList();
 
       emit(BenchmarkLoadedState(
+        teamId: event.teamId,
         benchmark: benchmark,
         metaAlignment: metaAlignment,
         metaTrends: metaTrends,
@@ -50,7 +52,7 @@ class BenchmarkBloc extends Bloc<BenchmarkEvent, BenchmarkState> {
         snapshotWindow: 30,
       ));
     } catch (e) {
-      emit(BenchmarkError(e.toString()));
+      emit(BenchmarkError(messageFromException(e, fallback: 'Failed to load benchmark')));
     }
   }
 
@@ -84,10 +86,7 @@ class BenchmarkBloc extends Bloc<BenchmarkEvent, BenchmarkState> {
     if (state is BenchmarkLoadedState) {
       final currentState = state as BenchmarkLoadedState;
       try {
-        // Get teamId from benchmark - we'll need to pass it through state
-        // For now, we'll reload the entire benchmark
-        // In production, you'd store teamId in state
-        final snapshotsData = await dataSource.getTeamSnapshots('', window: event.window);
+        final snapshotsData = await dataSource.getTeamSnapshots(currentState.teamId, window: event.window);
         final teamSnapshots = snapshotsData
             .map((item) => TeamSnapshot.fromJson(item))
             .toList();

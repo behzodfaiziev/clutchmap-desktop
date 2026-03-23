@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/errors/backend_error_helper.dart';
 import '../../domain/entities/app_settings.dart';
 import '../../infrastructure/datasources/settings_local_data_source.dart';
 import 'settings_event.dart';
@@ -25,7 +26,7 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
       final settings = await localDataSource.loadSettings();
       emit(state.copyWith(settings: settings, isLoading: false));
     } catch (e) {
-      emit(state.copyWith(error: e.toString(), isLoading: false));
+      emit(state.copyWith(error: messageFromException(e, fallback: 'Failed to load settings'), isLoading: false));
     }
   }
 

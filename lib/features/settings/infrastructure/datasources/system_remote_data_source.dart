@@ -5,6 +5,13 @@ class SystemRemoteDataSource {
 
   SystemRemoteDataSource(this.api);
 
+  Future<Map<String, dynamic>> getHealth() async {
+    final response = await api.get("/system/health");
+    final data = response.data as Map<String, dynamic>;
+    final responseData = data['data'] as Map<String, dynamic>? ?? data;
+    return responseData;
+  }
+
   Future<Map<String, dynamic>> getCapabilities() async {
     final response = await api.get("/system/capabilities");
     final data = response.data as Map<String, dynamic>;

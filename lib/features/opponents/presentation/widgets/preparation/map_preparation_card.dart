@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../infrastructure/datasources/opponent_remote_data_source.dart';
 import '../../../../../../core/di/injection.dart';
-import '../../../../../../core/network/api_client.dart';
+import '../../../../../../core/errors/backend_error_helper.dart';
+import '../../../infrastructure/datasources/opponent_remote_data_source.dart';
 import '../../../domain/entities/map_preparation.dart';
 
 class MapPreparationCard extends StatefulWidget {
@@ -25,7 +24,7 @@ class MapPreparationCard extends StatefulWidget {
 
 class _MapPreparationCardState extends State<MapPreparationCard> {
   late TextEditingController _notesController;
-  final OpponentRemoteDataSource _dataSource = OpponentRemoteDataSource(getIt<ApiClient>());
+  final OpponentRemoteDataSource _dataSource = getIt<OpponentRemoteDataSource>();
   bool _loading = false;
 
   @override
@@ -51,7 +50,14 @@ class _MapPreparationCardState extends State<MapPreparationCard> {
 
       widget.onUpdated(updated);
     } catch (e) {
-      // Ignore errors - use default values
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(messageFromException(e, fallback: 'Could not load map matchup')),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
     } finally {
       setState(() => _loading = false);
     }

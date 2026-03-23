@@ -9,11 +9,31 @@ abstract class MatchesEvent extends Equatable {
 
 class MatchesLoaded extends MatchesEvent {
   final String? filter;
+  /// Text search (backend param q).
+  final String? query;
+  /// Optional backend filters for GET /match-plans.
+  final String? folderId;
+  final String? gameId;
+  final String? mapId;
+  final String? opponentId;
+  /// When set, emitted state will include this as [MatchesLoadedState.lastCreatedMatchId].
+  final String? createdMatchId;
+  /// True when [createdMatchId] is from duplicating a match (for UI feedback).
+  final bool createdWasDuplicate;
 
-  const MatchesLoaded({this.filter});
+  const MatchesLoaded({
+    this.filter,
+    this.query,
+    this.folderId,
+    this.gameId,
+    this.mapId,
+    this.opponentId,
+    this.createdMatchId,
+    this.createdWasDuplicate = false,
+  });
 
   @override
-  List<Object?> get props => [filter];
+  List<Object?> get props => [filter, query, folderId, gameId, mapId, opponentId, createdMatchId, createdWasDuplicate];
 }
 
 class MatchCreated extends MatchesEvent {
@@ -62,6 +82,19 @@ class MatchDeleted extends MatchesEvent {
 
   @override
   List<Object?> get props => [matchId];
+}
+
+class MatchDuplicated extends MatchesEvent {
+  final String matchId;
+
+  const MatchDuplicated(this.matchId);
+
+  @override
+  List<Object?> get props => [matchId];
+}
+
+class ClearCreatedMatchId extends MatchesEvent {
+  const ClearCreatedMatchId();
 }
 
 

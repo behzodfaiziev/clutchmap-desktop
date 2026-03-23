@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../domain/entities/strategy_template.dart';
 
 abstract class TemplateEvent extends Equatable {
   const TemplateEvent();
@@ -13,10 +14,12 @@ class TemplatesLoaded extends TemplateEvent {
 
 class TemplateSelected extends TemplateEvent {
   final String templateId;
-  const TemplateSelected(this.templateId);
+  /// When set, detail is built from list data (avoids GET /templates/{id} when backend has no single-template endpoint).
+  final StrategyTemplate? templateFromList;
+  const TemplateSelected(this.templateId, {this.templateFromList});
 
   @override
-  List<Object?> get props => [templateId];
+  List<Object?> get props => [templateId, templateFromList];
 }
 
 class CreateTemplate extends TemplateEvent {
@@ -36,6 +39,10 @@ class ApplyTemplate extends TemplateEvent {
 
   @override
   List<Object?> get props => [templateId, title, folderId];
+}
+
+class TemplateSelectionCleared extends TemplateEvent {
+  const TemplateSelectionCleared();
 }
 
 

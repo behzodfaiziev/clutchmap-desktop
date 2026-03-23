@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
-import 'map_preparation_card.dart';
-import 'export_service.dart';
+import '../../../../../core/di/injection.dart';
+import '../../../../game/domain/entities/game_map_summary.dart';
+import '../../../../game/domain/entities/game_type.dart';
+import '../../../../game/infrastructure/datasources/game_config_remote_data_source.dart';
 import '../../../domain/entities/map_preparation.dart';
+import 'export_service.dart';
+import 'map_preparation_card.dart';
 
 class PreparationPage extends StatefulWidget {
   final String opponentId;
@@ -20,35 +24,53 @@ class PreparationPage extends StatefulWidget {
 }
 
 class _PreparationPageState extends State<PreparationPage> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+  TabController? _tabController;
   final TextEditingController _overallNotesController = TextEditingController();
   final Map<String, MapPreparation> _preparations = {};
-  final List<Map<String, dynamic>> _maps = [];
+  List<GameMapSummary> _maps = [];
+  bool _loading = true;
+
+  static List<GameMapSummary> _fallbackMaps() => [
+        const GameMapSummary(id: '1', name: 'Dust2'),
+        const GameMapSummary(id: '2', name: 'Mirage'),
+        const GameMapSummary(id: '3', name: 'Inferno'),
+        const GameMapSummary(id: '4', name: 'Overpass'),
+        const GameMapSummary(id: '5', name: 'Nuke'),
+      ];
 
   @override
   void initState() {
     super.initState();
-    // For now, we'll use placeholder maps
-    // In production, these would come from the game module
-    _maps.addAll([
-      {'id': '1', 'name': 'Dust2'},
-      {'id': '2', 'name': 'Mirage'},
-      {'id': '3', 'name': 'Inferno'},
-      {'id': '4', 'name': 'Overpass'},
-      {'id': '5', 'name': 'Nuke'},
-    ]);
-    _tabController = TabController(length: _maps.length, vsync: this);
-    _loadPreparations();
+    _loadMaps();
+  }
+
+  Future<void> _loadMaps() async {
+    try {
+      final list = await getIt<GameConfigRemoteDataSource>().getMapsByGameType(GameType.cs2);
+      if (!mounted) return;
+      setState(() {
+        _maps = list.isEmpty ? _fallbackMaps() : list;
+        _tabController = TabController(length: _maps.length, vsync: this);
+        _loadPreparations();
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _maps = _fallbackMaps();
+        _tabController = TabController(length: _maps.length, vsync: this);
+        _loadPreparations();
+        _loading = false;
+      });
+    }
   }
 
   void _loadPreparations() {
-    // Load existing preparations from backend
-    // For now, initialize empty
     for (var map in _maps) {
-      if (!_preparations.containsKey(map['id'])) {
-        _preparations[map['id']] = MapPreparation(
-          mapId: map['id'] as String,
-          mapName: map['name'] as String,
+      if (!_preparations.containsKey(map.id)) {
+        _preparations[map.id] = MapPreparation(
+          mapId: map.id,
+          mapName: map.name,
           notes: '',
           predictedAdvantage: 'EVEN_MATCH',
           confidence: 0,
@@ -59,36 +81,56 @@ class _PreparationPageState extends State<PreparationPage> with SingleTickerProv
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController?.dispose();
     _overallNotesController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return Scaffold(
+        appBar: AppBar(title: Text("Preparation: ${widget.opponentName}")),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(
+                'Loading maps...',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.white70,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text("Preparation: ${widget.opponentName}"),
         bottom: TabBar(
-          controller: _tabController,
+          controller: _tabController!,
           isScrollable: true,
-          tabs: _maps.map((map) => Tab(text: map['name'] as String)).toList(),
+          tabs: _maps.map((m) => Tab(text: m.name)).toList(),
         ),
       ),
       body: Column(
         children: [
           Expanded(
             child: TabBarView(
-              controller: _tabController,
+              controller: _tabController!,
               children: _maps.map((map) {
-                final preparation = _preparations[map['id']]!;
+                final preparation = _preparations[map.id]!;
                 return MapPreparationCard(
                   preparation: preparation,
                   teamId: widget.teamId,
                   opponentId: widget.opponentId,
                   onUpdated: (updated) {
                     setState(() {
-                      _preparations[map['id']] = updated;
+                      _preparations[map.id] = updated;
                     });
                   },
                 );

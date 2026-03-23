@@ -9,10 +9,21 @@ abstract class SearchEvent extends Equatable {
 
 class SearchQueryChanged extends SearchEvent {
   final String query;
-  const SearchQueryChanged(this.query);
+  final String? gameType;
+  final String? mapCode;
+  final String? pattern;
+  final List<String>? scope;
+
+  const SearchQueryChanged(
+    this.query, {
+    this.gameType,
+    this.mapCode,
+    this.pattern,
+    this.scope,
+  });
 
   @override
-  List<Object?> get props => [query];
+  List<Object?> get props => [query, gameType, mapCode, pattern, scope];
 }
 
 class SearchResultSelected extends SearchEvent {
@@ -27,6 +38,15 @@ class SearchResultSelected extends SearchEvent {
 
   @override
   List<Object?> get props => [resultId, resultType, matchId];
+}
+
+/// Move selection up (-1) or down (+1). Used for arrow keys.
+class SearchSelectionMoved extends SearchEvent {
+  final int delta;
+  const SearchSelectionMoved(this.delta);
+
+  @override
+  List<Object?> get props => [delta];
 }
 
 

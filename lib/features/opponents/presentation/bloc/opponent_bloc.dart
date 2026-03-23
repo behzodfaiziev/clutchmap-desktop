@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/errors/backend_error_helper.dart';
 import '../../domain/entities/opponent_profile.dart';
 import '../../domain/entities/matchup_analysis.dart';
 import '../../infrastructure/datasources/opponent_remote_data_source.dart';
@@ -11,6 +12,9 @@ class OpponentBloc extends Bloc<OpponentEvent, OpponentState> {
   OpponentBloc({required this.dataSource}) : super(OpponentLoading()) {
     on<OpponentsLoaded>(_onOpponentsLoaded);
     on<OpponentSelected>(_onOpponentSelected);
+    on<OpponentCreated>(_onOpponentCreated);
+    on<OpponentUpdated>(_onOpponentUpdated);
+    on<OpponentDeleted>(_onOpponentDeleted);
   }
 
   Future<void> _onOpponentsLoaded(
@@ -27,7 +31,7 @@ class OpponentBloc extends Bloc<OpponentEvent, OpponentState> {
 
       emit(OpponentLoadedState(opponents: opponents));
     } catch (e) {
-      emit(OpponentError(e.toString()));
+      emit(OpponentError(messageFromException(e, fallback: 'Failed to load opponents')));
     }
   }
 
@@ -80,7 +84,63 @@ class OpponentBloc extends Bloc<OpponentEvent, OpponentState> {
           matchup: matchup,
         ));
       } catch (e) {
-        emit(OpponentError(e.toString()));
+        emit(OpponentError(messageFromException(e, fallback: 'Failed to load opponent')));
+      }
+    }
+  }
+
+  Future<void> _onOpponentCreated(
+    OpponentCreated event,
+    Emitter<OpponentState> emit,
+  ) async {
+    if (state is OpponentLoadedState) {
+      emit(OpponentLoading());
+      try {
+        await dataSource.createOpponent(
+          name: event.name,
+          region: event.region,
+          notes: event.notes,
+          tags: event.tags,
+        );
+        add(const OpponentsLoaded());
+      } catch (e) {
+        emit(OpponentError(messageFromException(e, fallback: 'Failed to create opponent')));
+      }
+    }
+  }
+
+  Future<void> _onOpponentUpdated(
+    OpponentUpdated event,
+    Emitter<OpponentState> emit,
+  ) async {
+    if (state is OpponentLoadedState) {
+      emit(OpponentLoading());
+      try {
+        await dataSource.updateOpponent(
+          event.opponentId,
+          name: event.name,
+          region: event.region,
+          notes: event.notes,
+          tags: event.tags,
+        );
+        add(const OpponentsLoaded());
+      } catch (e) {
+        emit(OpponentError(messageFromException(e, fallback: 'Failed to update opponent')));
+      }
+    }
+  }
+
+  Future<void> _onOpponentDeleted(
+    OpponentDeleted event,
+    Emitter<OpponentState> emit,
+  ) async {
+    if (state is OpponentLoadedState) {
+      emit(OpponentLoading());
+      try {
+        await dataSource.deleteOpponent(event.opponentId);
+        add(const OpponentsLoaded());
+      } catch (e) {
+        emit(OpponentError(messageFromException(e, fallback: 'Failed to delete opponent')));
       }
     }
   }

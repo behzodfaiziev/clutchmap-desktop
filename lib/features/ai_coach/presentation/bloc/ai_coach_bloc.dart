@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/errors/backend_error_helper.dart';
 import '../../infrastructure/datasources/ai_coach_remote_data_source.dart';
 import '../../domain/entities/chat_message.dart';
 import '../bloc/ai_coach_event.dart';
@@ -60,7 +61,7 @@ class AiCoachBloc extends Bloc<AiCoachEvent, AiCoachState> {
         isLoading: false,
       ));
     } catch (e) {
-      emit(AiCoachError('Failed to get AI response: $e'));
+      emit(AiCoachError(messageFromException(e, fallback: 'Failed to get AI response')));
     }
   }
 

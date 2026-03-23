@@ -49,6 +49,8 @@ class WorkspaceLoadedState extends WorkspaceState {
   final List<RecommendationHistoryItem> recommendationHistory;
   final RecommendationImpact? selectedImpact;
   final AdvisorPerformance? advisorPerformance;
+  /// Preview result from preview-apply (recommendationId -> data). Cleared after showing.
+  final Map<String, Map<String, dynamic>>? recommendationPreview;
   final List<ActivityItem> activities;
   final List<PresenceUser> activeUsers;
   final bool hasUnsavedChanges;
@@ -77,12 +79,14 @@ class WorkspaceLoadedState extends WorkspaceState {
     List<RecommendationHistoryItem>? recommendationHistory,
     RecommendationImpact? selectedImpact,
     AdvisorPerformance? advisorPerformance,
+    Map<String, Map<String, dynamic>>? recommendationPreview,
     List<ActivityItem>? activities,
     List<PresenceUser>? activeUsers,
     bool? hasUnsavedChanges,
     bool? offlineMode,
     bool? versionConflict,
-  })  : lockStatuses = lockStatuses ?? const {},
+  })  : recommendationPreview = recommendationPreview,
+        lockStatuses = lockStatuses ?? const {},
         tacticalEvents = tacticalEvents ?? const {},
         canvasStrokes = canvasStrokes ?? const {},
         canvasArrows = canvasArrows ?? const {},
@@ -142,6 +146,8 @@ class WorkspaceLoadedState extends WorkspaceState {
     List<RecommendationHistoryItem>? recommendationHistory,
     RecommendationImpact? selectedImpact,
     AdvisorPerformance? advisorPerformance,
+    Map<String, Map<String, dynamic>>? recommendationPreview,
+    bool clearRecommendationPreview = false,
     List<ActivityItem>? activities,
     List<PresenceUser>? activeUsers,
     bool? hasUnsavedChanges,
@@ -170,6 +176,7 @@ class WorkspaceLoadedState extends WorkspaceState {
       recommendationHistory: recommendationHistory ?? this.recommendationHistory,
       selectedImpact: selectedImpact ?? this.selectedImpact,
       advisorPerformance: advisorPerformance ?? this.advisorPerformance,
+      recommendationPreview: clearRecommendationPreview ? null : (recommendationPreview ?? this.recommendationPreview),
       activities: activities ?? this.activities,
       activeUsers: activeUsers ?? this.activeUsers,
       hasUnsavedChanges: hasUnsavedChanges ?? this.hasUnsavedChanges,
@@ -310,6 +317,7 @@ class WorkspaceLoadedState extends WorkspaceState {
         recommendationHistory,
         selectedImpact,
         advisorPerformance,
+        recommendationPreview,
         activities,
         activeUsers,
         hasUnsavedChanges,

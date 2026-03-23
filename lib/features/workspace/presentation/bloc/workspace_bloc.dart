@@ -24,6 +24,8 @@ import '../../infrastructure/datasources/draft_local_data_source.dart';
 import '../../domain/entities/round_draft.dart';
 import '../../../../core/telemetry/telemetry.dart';
 import '../../../../core/di/injection.dart';
+import '../../../../core/errors/backend_error_helper.dart';
+import '../../../../core/team/active_team_service.dart';
 import '../widgets/canvas/canvas_models.dart';
 import 'workspace_event.dart';
 import 'workspace_state.dart';
@@ -47,6 +49,7 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
     on<RoundNotesUpdated>(_onRoundNotesUpdated);
     on<AcquireLock>(_onAcquireLock);
     on<ReleaseLock>(_onReleaseLock);
+    on<LockRenewRequested>(_onLockRenewRequested);
     on<LockStatusUpdated>(_onLockStatusUpdated);
     on<TacticalEventAdded>(_onTacticalEventAdded);
     on<TacticalEventRemoved>(_onTacticalEventRemoved);
@@ -61,6 +64,8 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
     on<SimulateRequested>(_onSimulateRequested);
     on<OptimizeRequested>(_onOptimizeRequested);
     on<RecommendationApplied>(_onRecommendationApplied);
+    on<PreviewApplyRequested>(_onPreviewApplyRequested);
+    on<ClearRecommendationPreview>(_onClearRecommendationPreview);
     on<RecommendationsLoaded>(_onRecommendationsLoaded);
     on<RecommendationHistoryRequested>(_onRecommendationHistoryRequested);
     on<ImpactRequested>(_onImpactRequested);
@@ -74,6 +79,8 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
     on<ConflictResolved>(_onConflictResolved);
     on<WebSocketDisconnected>(_onWebSocketDisconnected);
     on<WebSocketReconnected>(_onWebSocketReconnected);
+    on<MatchArchiveRequested>(_onMatchArchiveRequested);
+    on<MatchUnarchiveRequested>(_onMatchUnarchiveRequested);
   }
 
   @override
@@ -186,11 +193,13 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
 
     try {
       final match = await dataSource.getMatchDetail(event.matchId);
-      final rounds = await dataSource.getRounds(event.matchId);
+      final rounds = match.rounds != null && match.rounds!.isNotEmpty
+          ? match.rounds!.map((r) => r.toEntity()).toList()
+          : (await dataSource.getRounds(event.matchId)).map((r) => r.toEntity()).toList();
 
       final loadedState = WorkspaceLoadedState(
         match: match.toEntity(),
-        rounds: rounds.map((r) => r.toEntity()).toList(),
+        rounds: rounds,
         selectedIndex: 0,
       );
 
@@ -319,12 +328,8 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
         // Load intelligence for first round
         add(RoundIntelligenceLoaded(firstRound.id));
       }
-    } on DioException catch (e) {
-      emit(WorkspaceError(
-        e.response?.data?['message'] as String? ?? 'Failed to load workspace',
-      ));
     } catch (e) {
-      emit(WorkspaceError(e.toString()));
+      emit(WorkspaceError(messageFromException(e, fallback: 'Failed to load workspace')));
     }
   }
 
@@ -446,6 +451,17 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
       } catch (e) {
         // Ignore errors
       }
+    }
+  }
+
+  Future<void> _onLockRenewRequested(
+    LockRenewRequested event,
+    Emitter<WorkspaceState> emit,
+  ) async {
+    try {
+      await dataSource.renewLock(event.roundId);
+    } catch (_) {
+      // Ignore; lock status may be updated via WebSocket
     }
   }
 
@@ -806,14 +822,27 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
         final robustnessData = await dataSource.getMatchRobustness(event.matchId);
         final matchRobustness = MatchRobustness.fromJson(robustnessData);
 
-        // Try to load matchup if match has opponent and map
+        // Load matchup when match has opponent and map
         MatchupSummary? matchup;
-        try {
-          // We need teamId, opponentId, and mapId from match
-          // For now, we'll skip matchup if not available
-          // In a real implementation, you'd get these from the match entity
-        } catch (e) {
-          // Matchup not available
+        final teamId = getIt<ActiveTeamService>().activeTeamId;
+        if (teamId != null &&
+            teamId.isNotEmpty &&
+            currentState.match.opponentId != null &&
+            currentState.match.opponentId!.isNotEmpty &&
+            currentState.match.mapId != null &&
+            currentState.match.mapId!.isNotEmpty) {
+          try {
+            final matchupData = await dataSource.getMapMatchup(
+              teamId,
+              currentState.match.opponentId!,
+              currentState.match.mapId!,
+            );
+            if (matchupData != null) {
+              matchup = MatchupSummary.fromJson(matchupData);
+            }
+          } catch (_) {
+            // Matchup not available
+          }
         }
 
         emit(currentState.copyWith(
@@ -835,19 +864,24 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
     if (state is WorkspaceLoadedState) {
       final currentState = state as WorkspaceLoadedState;
       emit(currentState.copyWith(advisoryLoading: true));
-      
+
       try {
-        // For now, we'll need teamId, opponentId, and mapId
-        // These should come from the match detail or be passed separately
-        // For this implementation, we'll show an error if not available
-        // In production, you'd fetch these from the match detail endpoint
-        
-        // Simulate with default adjustments (0, 0, 0)
-        // This is a placeholder - in production you'd get teamId, opponentId, mapId from match
-        // For now, we'll just refresh match intelligence
+        final teamId = getIt<ActiveTeamService>().activeTeamId;
+        final opponentId = currentState.match.opponentId;
+        final mapId = currentState.match.mapId;
+
+        if (teamId != null &&
+            teamId.isNotEmpty &&
+            opponentId != null &&
+            opponentId.isNotEmpty &&
+            mapId != null &&
+            mapId.isNotEmpty) {
+          await dataSource.simulateMatchup(teamId, opponentId, mapId);
+        }
         add(MatchIntelligenceRequested(event.matchId));
       } catch (e) {
-        // Handle error
+        // Non-fatal; still refresh intelligence
+        add(MatchIntelligenceRequested(event.matchId));
       } finally {
         emit(currentState.copyWith(advisoryLoading: false));
       }
@@ -861,25 +895,40 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
     if (state is WorkspaceLoadedState) {
       final currentState = state as WorkspaceLoadedState;
       emit(currentState.copyWith(advisoryLoading: true));
-      
+
       try {
-        // Optimize matchup
-        // For now, we'll need teamId, opponentId, and mapId
-        // These should come from the match detail or be passed separately
-        // For this implementation, we'll show an error if not available
-        
-        // This is a placeholder - in production you'd get teamId, opponentId, mapId from match
-        // For now, we'll just show loading and then load recommendations
-        final recommendations = await dataSource.getRecommendations(''); // teamId needed
-        final parsedRecommendations = recommendations
-            .take(3)
-            .map((json) => Recommendation.fromOptimizedSolution(json, recommendations.indexOf(json) + 1))
-            .toList();
-        
-        emit(currentState.copyWith(
-          recommendations: parsedRecommendations,
-          advisoryLoading: false,
-        ));
+        final teamId = getIt<ActiveTeamService>().activeTeamId;
+        final opponentId = currentState.match.opponentId;
+        final mapId = currentState.match.mapId;
+
+        if (teamId != null &&
+            teamId.isNotEmpty &&
+            opponentId != null &&
+            opponentId.isNotEmpty &&
+            mapId != null &&
+            mapId.isNotEmpty) {
+          await dataSource.optimizeMatchup(
+            teamId,
+            opponentId,
+            mapId,
+            event.mode,
+          );
+        }
+
+        if (teamId != null && teamId.isNotEmpty) {
+          final recommendations = await dataSource.getRecommendations(teamId);
+          final parsedRecommendations = recommendations
+              .take(10)
+              .map((json) => Recommendation.fromOptimizedSolution(
+                  json, recommendations.indexOf(json) + 1))
+              .toList();
+          emit(currentState.copyWith(
+            recommendations: parsedRecommendations,
+            advisoryLoading: false,
+          ));
+        } else {
+          emit(currentState.copyWith(advisoryLoading: false));
+        }
       } catch (e) {
         emit(currentState.copyWith(advisoryLoading: false));
       }
@@ -893,8 +942,17 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
     if (state is WorkspaceLoadedState) {
       final currentState = state as WorkspaceLoadedState;
       try {
-        await dataSource.applyRecommendation(event.recommendationId);
-        
+        await dataSource.applyRecommendation(event.recommendationId, currentState.match.id);
+        try {
+          await dataSource.submitRecommendationFeedback(
+            event.recommendationId,
+            applied: true,
+            rating: 5,
+            notes: '',
+          );
+        } catch (_) {
+          // Ignore feedback failure; apply already succeeded
+        }
         // Schedule debounced match intelligence refresh after applying recommendation
         _scheduleIntelligenceRefresh(currentState.match.id);
         if (currentState.rounds.isNotEmpty) {
@@ -908,6 +966,37 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
     }
   }
 
+  Future<void> _onPreviewApplyRequested(
+    PreviewApplyRequested event,
+    Emitter<WorkspaceState> emit,
+  ) async {
+    if (state is WorkspaceLoadedState) {
+      final currentState = state as WorkspaceLoadedState;
+      try {
+        final data = await dataSource.previewApplyRecommendation(
+          event.recommendationId,
+          currentState.match.id,
+        );
+        final preview = Map<String, Map<String, dynamic>>.from(
+          currentState.recommendationPreview ?? {},
+        )..[event.recommendationId] = data;
+        emit(currentState.copyWith(recommendationPreview: preview));
+      } catch (_) {
+        // Ignore; preview not available
+      }
+    }
+  }
+
+  void _onClearRecommendationPreview(
+    ClearRecommendationPreview event,
+    Emitter<WorkspaceState> emit,
+  ) {
+    if (state is WorkspaceLoadedState) {
+      final currentState = state as WorkspaceLoadedState;
+      emit(currentState.copyWith(clearRecommendationPreview: true));
+    }
+  }
+
   Future<void> _onRecommendationsLoaded(
     RecommendationsLoaded event,
     Emitter<WorkspaceState> emit,
@@ -915,9 +1004,9 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
     if (state is WorkspaceLoadedState) {
       final currentState = state as WorkspaceLoadedState;
       try {
-        // For now, we'll need teamId
-        // This is a placeholder - in production you'd get teamId from match
-        final recommendations = await dataSource.getRecommendations(''); // teamId needed
+        final teamId = getIt<ActiveTeamService>().activeTeamId;
+        if (teamId == null || teamId.isEmpty) return;
+        final recommendations = await dataSource.getRecommendations(teamId);
         final parsedRecommendations = recommendations
             .take(3)
             .map((json) => Recommendation.fromOptimizedSolution(json, recommendations.indexOf(json) + 1))
@@ -937,17 +1026,15 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
     if (state is WorkspaceLoadedState) {
       final currentState = state as WorkspaceLoadedState;
       try {
-        // For now, we'll need teamId - this should come from match
-        // For this implementation, we'll use recommendations endpoint
-        // In production, you'd get teamId from match detail
-        final recommendations = await dataSource.getRecommendations(''); // teamId needed
+        final teamId = getIt<ActiveTeamService>().activeTeamId;
+        if (teamId == null || teamId.isEmpty) return;
+        final recommendations = await dataSource.getRecommendations(teamId);
         final history = recommendations
             .map((json) => RecommendationHistoryItem.fromJson(json))
             .toList();
 
-        // Also load advisor performance
         try {
-          final performanceData = await dataSource.getAdvisorPerformance(''); // teamId needed
+          final performanceData = await dataSource.getAdvisorPerformance(teamId);
           final performance = AdvisorPerformance.fromJson(performanceData);
           emit(currentState.copyWith(
             recommendationHistory: history,
@@ -1161,6 +1248,38 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
         final currentRound = currentState.rounds[currentState.selectedIndex];
         _scheduleAutoSave(currentRound.id);
       }
+    }
+  }
+
+  Future<void> _onMatchArchiveRequested(
+    MatchArchiveRequested event,
+    Emitter<WorkspaceState> emit,
+  ) async {
+    final state = this.state;
+    if (state is! WorkspaceLoadedState || state.match.archived) return;
+    final matchId = state.match.id;
+    try {
+      await dataSource.archiveMatch(matchId);
+      final updated = await dataSource.getMatchDetail(matchId);
+      emit(state.copyWith(match: updated.toEntity()));
+    } catch (_) {
+      // Keep current state on failure; user can retry
+    }
+  }
+
+  Future<void> _onMatchUnarchiveRequested(
+    MatchUnarchiveRequested event,
+    Emitter<WorkspaceState> emit,
+  ) async {
+    final state = this.state;
+    if (state is! WorkspaceLoadedState || !state.match.archived) return;
+    final matchId = state.match.id;
+    try {
+      await dataSource.unarchiveMatch(matchId);
+      final updated = await dataSource.getMatchDetail(matchId);
+      emit(state.copyWith(match: updated.toEntity()));
+    } catch (_) {
+      // Keep current state on failure; user can retry
     }
   }
 
